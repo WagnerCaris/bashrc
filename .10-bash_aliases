@@ -1,0 +1,26 @@
+# ===== Navegação =====
+alias doc='cd ~/Documentos'
+alias dow='cd ~/Downloads'
+alias proc='cd /container/proc'
+alias con='cd /container/proc'
+
+
+# ===== Listagem =====
+alias l='eza -la'
+alias ls='ls --color=auto'
+alias nano='micro'
+
+# ===== Segurança / interativo =====
+alias rm='rm -i'    # Ask before removing files
+alias cp='cp -i'    # Ask before overwriting
+alias mv='mv -i'    # Ask before overwriting
+alias mkdir='mkdir -pv' # Show created dirs
+
+
+# ===== Conveniência =====
+alias c='clear'
+alias e='exit'
+
+# ===== Atalhos específicos =====
+alias mmi='cat /opt/os/app/configs/mmi/mmi.config'
+alias mc='. /usr/lib/mc/mc-wrapper.sh'
