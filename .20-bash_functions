@@ -1,0 +1,212 @@
+# ~/.bash_functions.sh
+# Funções utilitárias carregadas pelo ~/.bashrc
+
+# ====== Mini "framework" (cores + helpers) ======
+# Só usa cor se o terminal suportar
+__has_color() { [ -t 1 ] && command -v tput >/dev/null 2>&1 && [ "$(tput colors 2>/dev/null)" -ge 8 ]; }
+
+__c() { # __c CODE "texto"
+  if __has_color; then printf "\e[%sm%s\e[0m" "$1" "$2"; else printf "%s" "$2"; fi
+}
+
+msg()  { printf "%s\n" "$(__c '1;32' "✔") $*"; }
+warn() { printf "%s\n" "$(__c '1;33' "⚠") $*"; }
+err()  { printf "%s\n" "$(__c '1;31' "✖") $*"; }
+
+need() { # need comando
+  command -v "$1" >/dev/null 2>&1 || { err "Comando ausente: $1"; return 127; }
+}
+
+sep() { # sep [TITULO]
+  local count="${SEP_WIDTH:-30}"
+  local line
+  line="$(printf "%*s" "$count" "" | tr " " "=")"
+
+  echo
+  if __has_color; then printf "\e[1;34m%s\e[0m\n" "$line"; else printf "%s\n" "$line"; fi
+  [ -n "$1" ] && echo "$1"
+  if __has_color; then printf "\e[1;34m%s\e[0m\n" "$line"; else printf "%s\n" "$line"; fi
+  echo
+}
+
+# ====== Suas funções ======
+
+df() {
+  [ -x /usr/bin/df ] || { err "df não encontrado em /usr/bin/df"; return 127; }
+  echo "==== Internal Disks ===="
+  /usr/bin/df -hT | grep -E "^Filesystem|/dev/sd|/dev/nvme|/dev/mmc" | column -t
+  echo
+  echo "==== Removable Disks ===="
+  /usr/bin/df -hT | grep -E "/media|/mnt" | column -t
+}
+
+bigdirs() {
+  need du || return
+  local target="${1:-.}"
+  du -h --max-depth=1 "$target" 2>/dev/null | awk '$1 ~ /G/ {print}' | sort -hr
+}
+
+bigarchives() {
+  need find || return
+  need du || return
+  local target="${1:-$HOME}"
+  local size="${2:-5G}"
+
+  find "$target" -type f \( \
+    -iname "*.zip" -o -iname "*.tar" -o -iname "*.tar.gz" -o -iname "*.tgz" -o -iname "*.gz" -o -iname "*.7z" \
+  \) -size +"$size" -exec du -h {} + 2>/dev/null | sort -hr
+}
+
+size() {
+  if [ $# -eq 0 ]; then
+    sep  "  Disk usage helpers"
+    echo "  size dirs [PATH]              → Diretórios > 1GB (max-depth=1)"
+    echo "  size archives [PATH] [SIZE]   → Arquivos compactados > SIZE (padrão: 5G)"
+    echo
+    echo "Exemplos:"
+    echo "  size dirs"
+    echo "  size dirs /container/proc"
+    echo "  size archives"
+    echo "  size archives /mnt/backup 10G"
+    echo
+    return 0
+  fi
+
+  case "$1" in
+    dirs)     shift; bigdirs "$@";;
+    archives) shift; bigarchives "$@";;
+    help|-h|--help) shift; size;;
+    *) err "Opção inválida: $1"; warn "Use: size"; return 2;;
+  esac
+}
+
+
+scp() {
+    if [ $# -eq 0 ]; then
+        echo -e "\n🚀 Tip: Use scp like this → scp FILE user@host:/path/"
+        echo -e "Example: scp data.txt radaz@192.168.0.10:/tmp/\n"
+    else
+        command /usr/bin/scp "$@"
+    fi
+}
+
+rsync() {
+    if [ $# -eq 0 ]; then
+        echo -e "\n📦 Tip: Use rsync like this:"
+        echo -e "  rsync -avh --progress SOURCE DESTINATION"
+        echo
+        echo -e "Examples:"
+        echo -e "  Local → local:"
+        echo -e "    rsync -avh --progress /home/proc/ /mnt/backup/"
+        echo
+        echo -e "  Local → remote:"
+        echo -e "    rsync -avh --progress /home/proc/archive.txt radaz@192.168.8.15:/mnt/backup/\n"
+    else
+        command /usr/bin/rsync "$@"
+    fi
+}
+
+
+ssh() {
+    if [ $# -eq 0 ]; then
+        echo -e "\n🔐 Tip: Use SSH like this → ssh -X user@host"
+        echo -e "Example: ssh -X radaz@192.168.0.10\n"
+    else
+        command /usr/bin/ssh "$@"
+    fi
+}
+
+
+extract () {
+    if [ -f "$1" ]; then
+        case "$1" in
+                *.tar.bz2)   tar xjf "$1" ;;
+                *.tar.gz)    tar xzf "$1" ;;
+                *.tar.xz)    tar xJf "$1" ;;
+                *.tar.zst)   tar --zstd -xf "$1" ;;
+                *.tar)       tar xf "$1" ;;
+                *.tbz2)      tar xjf "$1" ;;
+                *.tgz)       tar xzf "$1" ;;
+                *.zip)       unzip "$1" ;;
+                *.rar)       unrar x "$1" ;;
+                *.7z)        7z x "$1" ;;
+                *.gz)        gunzip "$1" ;;
+                *.bz2)       bunzip2 "$1" ;;
+                *.xz)        unxz "$1" ;;
+                *.Z)         uncompress "$1" ;;
+                *)           echo "extract: '$1' - unsupported file type" ;;
+        esac
+        else
+            echo "extract: '$1' is not a valid file"
+        fi
+}
+
+
+
+
+# Função que detecta automaticamente a sub-rede e faz o scan amigável
+nmapscan() {
+    IP=$(hostname -I | awk '{print $1}')
+    BASE=$(echo "$IP" | cut -d '.' -f1-2)
+
+    if [ $# -eq 0 ]; then
+        START=$(echo "$IP" | cut -d '.' -f3)
+        END=$START
+    else
+        START=$1
+        END=$2
+    fi
+
+    for NET in $(seq "$START" "$END"); do
+        RANGE="$BASE.$NET.0/24"
+        echo "Escaneando rede: $RANGE"
+        echo
+
+        sudo nmap -sn "$RANGE" | grep -E "Nmap scan|MAC" \
+        | awk '{ gsub("[()]", ""); if ($1=="Nmap") printf "\nHost: %-16s",$5; else if ($1=="MAC") printf "  MAC: %-18s  Fabricante: %s\n",$3,$4 }'
+    done
+}
+
+# Wrapper amigável para o nmap original
+nmap() {
+    if [ $# -eq 0 ]; then
+        echo "Como escanear sua rede:"
+        echo
+        echo "  Para mostrar todos os dispositivos com IP, MAC e fabricante digite: nmapscan  "
+        echo
+        echo "  Para, por exemplo, escanear a rede de 192.168.10.0/24 até 192.168.20.0/24 digite: nmapscan 10 20  "
+        echo
+        echo "  Para scan de portas de 1 dispositivo (ex.: roteador):  sudo /usr/bin/nmap -sV <IP>"
+        echo
+        echo "  Para usar o Nmap normal com argumentos:  nmap <opções>"
+        echo
+    else
+        command nmap "$@"
+    fi
+}
+
+
+
+helpme() {
+  sep "🧰 Comandos pessoais"
+  echo "  size        → menu de uso de disco (dirs/archives)"
+  echo "  bigdirs     → diretórios > 1GB"
+  echo "  bigarchives → archives grandes"
+  echo "  df          → df organizado"
+  echo "  sep         → separador bonitinho"
+  echo
+}
+complete -W "help" helpme
+
+
+
+vifm() {
+    local tmpfile
+    tmpfile="$(mktemp)"
+    #command vifm --choose-dir="$tmpfile" "$@"
+    command vifm --choose-dir="$tmpfile" "${@:-.}";
+    if [ -f "$tmpfile" ]; then
+        cd "$(cat "$tmpfile")" || return
+        rm -f "$tmpfile"
+    fi
+}
