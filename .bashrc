@@ -48,12 +48,12 @@ esac
 
 if [ -n "$force_color_prompt" ]; then
     if [ -x /usr/bin/tput ] && tput setaf 1 >&/dev/null; then
-        # We have color support; assume it's compliant with Ecma-48
-        # (ISO/IEC-6429). (Lack of such support is extremely rare, and such
-        # a case would tend to support setf rather than setaf.)
-        color_prompt=yes
+	# We have color support; assume it's compliant with Ecma-48
+	# (ISO/IEC-6429). (Lack of such support is extremely rare, and such
+	# a case would tend to support setf rather than setaf.)
+	color_prompt=yes
     else
-        color_prompt=
+	color_prompt=
     fi
 fi
 
@@ -90,50 +90,30 @@ if ! shopt -oq posix; then
     . /etc/bash_completion
   fi
 fi
-export GDL_STARTUP='/opt/os/home/proc/.gdl_startup.pro'
-export GDL_PATH='/usr/local/share/gnudatalanguage/lib/'
-export LD_LIBRARY_PATH=:/opt/os/usr/local/bin/
-export PATH=/opt/os/usr/local/bin/:~/.local/share/mamba/condabin:./local/bin/:/opt/os/usr/local/bin/:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:~/.local/bin/:/opt/os/bin/
-export PATH='/opt/os/app/bin/':$PATH
-export PYTHONPATH='/opt/os/app/bin/':$PYTHONPATH
-export EDITOR=micro
 
 
+export EDITOR="micro"
+export SEP_WIDTH=40
 
-#🔧 PASSO 3 — Exportar caminho (não obrigatório, mas eu recomendo)
-export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/nvidia/current:$LD_LIBRARY_PATH
-
+export GDL_STARTUP="/opt/os/home/proc/.gdl_startup.pro"
+export GDL_PATH="/usr/local/share/gnudatalanguage/lib/"
 export MAMBA_ROOT_PREFIX="$HOME/.local/share/mamba"
-if [[ $- == *i* ]] && command -v micromamba >/dev/null 2>&1; then
+
+# PATH base
+export PATH="/opt/os/app/bin:/opt/os/usr/local/bin:/opt/os/bin:$HOME/.local/bin:$HOME/.local/share/mamba/condabin:/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games"
+
+# Bibliotecas
+export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/nvidia/current${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# Micromamba
+if [[ $- == *i* ]] && [ -x "$HOME/.local/bin/micromamba" ]; then
   eval "$("$HOME/.local/bin/micromamba" shell hook --shell bash)"
 fi
 
+# CUDA
+export PATH="/usr/local/cuda/bin:$PATH"
+export LD_LIBRARY_PATH="/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-
-# Carregar funções pessoais
+# Carregar aliases e funções
 [ -f "$HOME/.10-bash_aliases" ] && . "$HOME/.10-bash_aliases"
 [ -f "$HOME/.20-bash_functions" ] && . "$HOME/.20-bash_functions"
-
-export SEP_WIDTH=40
-
-
-# >>> conda initialize >>>
-# !! Contents within this block are managed by 'conda init' !!
-__conda_setup="$('/home/radaz/miniconda3/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
-if [ $? -eq 0 ]; then
-    eval "$__conda_setup"
-else
-    if [ -f "/home/radaz/miniconda3/etc/profile.d/conda.sh" ]; then
-        . "/home/radaz/miniconda3/etc/profile.d/conda.sh"
-    else
-        export PATH="/home/radaz/miniconda3/bin:$PATH"
-    fi
-fi
-unset __conda_setup
-# <<< conda initialize <<<
-
-
-
-### CUDA 13.1 Toolkit
-export PATH=/usr/local/cuda/bin:$PATH
-export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
