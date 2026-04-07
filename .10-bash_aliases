@@ -2,18 +2,16 @@
 alias doc='cd ~/Documentos'
 alias dow='cd ~/Downloads'
 alias proc='cd /container/proc'
-alias con='cd /container/proc'
 
 
 # ===== Listagem =====
 alias l='eza -la'
+alias ll='eza -lah --group-directories-first'
 alias ls='ls --color=auto'
-alias nano='micro'
+#alias nano='micro'
 
 # ===== Segurança / interativo =====
-alias rm='rm -i'    # Ask before removing files
-alias cp='cp -i'    # Ask before overwriting
-alias mv='mv -i'    # Ask before overwriting
+alias rm='rm -I --preserve-root'   # Ask before removing sudo files
 alias mkdir='mkdir -pv' # Show created dirs
 
 
