@@ -22,3 +22,18 @@ alias e='exit'
 # ===== Atalhos específicos =====
 alias mmi='cat /opt/os/app/configs/mmi/mmi.config'
 alias mc='. /usr/lib/mc/mc-wrapper.sh'
+
+
+# ===== Abrir apps do terminal e fechar a terminal (evita ter a jenela do terminal sem serventia) =====
+#dever uma função chamada "gui"que faz:
+#             agui() {
+#               setsid -f "$@" >/dev/null 2>&1 < /dev/null
+#               exit
+#             }
+
+alias firefox='gui firefox'
+alias brave='gui brave-browser'
+alias qgis='gui qgis'
+alias thunar='gui thunar'
+alias nautilus='gui nautilus'
+alias configuration='gui xfce4-settings-manager'
