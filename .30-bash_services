@@ -1,0 +1,453 @@
+services() {
+  local RESET BOLD RED GREEN YELLOW BLUE MAGENTA CYAN GRAY
+  RESET=$'\033[0m'
+  BOLD=$'\033[1m'
+  RED=$'\033[31m'
+  GREEN=$'\033[32m'
+  YELLOW=$'\033[33m'
+  BLUE=$'\033[34m'
+  MAGENTA=$'\033[35m'
+  CYAN=$'\033[36m'
+  GRAY=$'\033[90m'
+
+  local SEP_WIDTH_LOCAL="${SEP_WIDTH:-100}"
+
+  _sep() {
+    printf '%*s\n' "$SEP_WIDTH_LOCAL" '' | tr ' ' '='
+  }
+
+  _header() {
+    _sep
+    printf "%b%s%b\n" "${BOLD}${CYAN}" "$1" "$RESET"
+    _sep
+  }
+
+  _summary_counts() {
+    local running_count failed_count enabled_count disabled_count masked_count static_count
+
+    running_count=$(
+      systemctl list-units --type=service --state=running --plain --no-pager --no-legend 2>/dev/null \
+        | awk '$1 ~ /\.service$/ {n++} END {print n+0}'
+    )
+
+    failed_count=$(
+      systemctl list-units --type=service --state=failed --plain --no-pager --no-legend 2>/dev/null \
+        | awk '$1 ~ /\.service$/ {n++} END {print n+0}'
+    )
+
+    read -r enabled_count disabled_count masked_count static_count < <(
+      systemctl list-unit-files --type=service --plain --no-pager --no-legend 2>/dev/null \
+        | awk '
+            $2=="enabled"  {e++}
+            $2=="disabled" {d++}
+            $2=="masked"   {m++}
+            $2=="static"   {s++}
+            END {print e+0, d+0, m+0, s+0}
+          '
+    )
+
+    printf "%bResumo:%b " "$BOLD" "$RESET"
+    printf "%brunning=%s%b  " "$GREEN" "$running_count" "$RESET"
+    printf "%bfailed=%s%b  " "$RED" "$failed_count" "$RESET"
+    printf "%benabled=%s%b  " "$BLUE" "$enabled_count" "$RESET"
+    printf "%bdisabled=%s%b  " "$MAGENTA" "$disabled_count" "$RESET"
+    printf "%bmasked=%s%b  " "$RED" "$masked_count" "$RESET"
+    printf "%bstatic=%s%b\n" "$GRAY" "$static_count" "$RESET"
+  }
+
+  _legend_short() {
+    printf "%bLegenda:%b\n" "$BOLD" "$RESET"
+    printf "  %brunning%b   = serviço em execução agora\n" "$GREEN" "$RESET"
+    printf "  %bfailed%b    = serviço falhou\n" "$RED" "$RESET"
+    printf "  %benabled%b   = inicia automaticamente no boot\n" "$BLUE" "$RESET"
+    printf "  %bdisabled%b  = não inicia automaticamente no boot\n" "$MAGENTA" "$RESET"
+    printf "  %bmasked%b    = bloqueado; não pode iniciar normalmente\n" "$RED" "$RESET"
+    printf "  %bstatic%b    = não é habilitado diretamente; costuma ser acionado por outra unit\n" "$GRAY" "$RESET"
+    echo
+    printf "  Ver status de um serviço:      sudo systemctl status <servico>\n"
+    printf "  Parar um serviço:              sudo systemctl stop <servico>\n"
+    printf "  Iniciar um serviço:            sudo systemctl start <servico>\n"
+    printf "  Reiniciar um serviço:          sudo systemctl restart <servico>\n"
+    printf "  Impedir no boot:               sudo systemctl disable <servico>\n"
+    printf "  Permitir no boot:              sudo systemctl enable <servico>\n"
+    printf "  Ver logs do boot atual:        sudo journalctl -u <servico> -b\n"
+  }
+
+  _legend_all() {
+    printf "%bLegenda:%b\n" "$BOLD" "$RESET"
+    printf "  %brunning%b         = serviço em execução agora\n" "$GREEN" "$RESET"
+    printf "  %bfailed%b          = serviço falhou\n" "$RED" "$RESET"
+    printf "  %benabled%b         = inicia automaticamente no boot\n" "$BLUE" "$RESET"
+    printf "  %bdisabled%b        = não inicia automaticamente no boot\n" "$MAGENTA" "$RESET"
+    printf "  %bmasked%b          = bloqueado; start manual normal não funciona\n" "$RED" "$RESET"
+    printf "  %bstatic%b          = não se habilita com enable; geralmente depende de outra unit\n" "$GRAY" "$RESET"
+    printf "  alias               = outro nome para uma unit\n"
+    printf "  indirect            = unit auxiliar/indireta; normalmente não é ativada diretamente\n"
+    printf "  enabled-runtime     = habilitada apenas no runtime atual\n"
+  }
+
+  _print_running() {
+    local count
+    count=$(
+      systemctl list-units --type=service --state=running --plain --no-pager --no-legend 2>/dev/null \
+        | awk '$1 ~ /\.service$/ {n++} END {print n+0}'
+    )
+
+    if [ "$count" -eq 0 ]; then
+      printf "%bNenhum serviço running encontrado.%b\n" "$YELLOW" "$RESET"
+      return
+    fi
+
+    printf "%-45s %-10s %s\n" "SERVIÇO" "ATIVO" "SUB"
+    printf "%-45s %-10s %s\n" "-------" "-----" "---"
+
+    systemctl list-units --type=service --state=running --plain --no-pager --no-legend 2>/dev/null \
+      | awk -v G="$GREEN" -v R="$RESET" '
+          $1 ~ /\.service$/ {
+            printf "%-45s %-10s %s%s%s\n", $1, $3, G, $4, R
+          }
+        '
+  }
+
+  _print_failed() {
+    local count
+    count=$(
+      systemctl list-units --type=service --state=failed --plain --no-pager --no-legend 2>/dev/null \
+        | awk '$1 ~ /\.service$/ {n++} END {print n+0}'
+    )
+
+    if [ "$count" -eq 0 ]; then
+      printf "%bNenhum serviço failed.%b\n" "$GREEN" "$RESET"
+      return
+    fi
+
+    printf "%-45s %-10s %s\n" "SERVIÇO" "ATIVO" "SUB"
+    printf "%-45s %-10s %s\n" "-------" "-----" "---"
+
+    systemctl list-units --type=service --state=failed --plain --no-pager --no-legend 2>/dev/null \
+      | awk -v C="$RED" -v R="$RESET" '
+          $1 ~ /\.service$/ {
+            printf "%-45s %-10s %s%s%s\n", $1, $3, C, $4, R
+          }
+        '
+  }
+
+  _print_unit_files_short() {
+    printf "%-45s %-16s\n" "SERVIÇO" "ESTADO"
+    printf "%-45s %-16s\n" "-------" "------"
+
+    systemctl list-unit-files --type=service --plain --no-pager --no-legend 2>/dev/null \
+      | awk -v BLUE="$BLUE" -v MAG="$MAGENTA" -v RED="$RED" -v GRAY="$GRAY" -v R="$RESET" '
+          $2=="enabled"  { printf "%-45s %s%-16s%s\n", $1, BLUE, $2, R }
+          $2=="disabled" { printf "%-45s %s%-16s%s\n", $1, MAG,  $2, R }
+          $2=="masked"   { printf "%-45s %s%-16s%s\n", $1, RED,  $2, R }
+          $2=="static"   { printf "%-45s %s%-16s%s\n", $1, GRAY, $2, R }
+        '
+  }
+
+  _print_unit_files_all() {
+    printf "%-45s %-18s\n" "SERVIÇO" "ESTADO"
+    printf "%-45s %-18s\n" "-------" "------"
+
+    systemctl list-unit-files --type=service --plain --no-pager --no-legend 2>/dev/null \
+      | awk -v BLUE="$BLUE" -v MAG="$MAGENTA" -v RED="$RED" -v GRAY="$GRAY" -v R="$RESET" '
+          {
+            state=$2
+            color=""
+
+            if (state=="enabled" || state=="enabled-runtime") {
+              color=BLUE
+            } else if (state=="disabled") {
+              color=MAG
+            } else if (state=="masked") {
+              color=RED
+            } else if (state=="static") {
+              color=GRAY
+            }
+
+            if (color != "") {
+              printf "%-45s %s%-18s%s\n", $1, color, state, R
+            } else {
+              printf "%-45s %-18s\n", $1, state
+            }
+          }
+        '
+  }
+
+  _inspect_service() {
+    local unit="$1"
+
+    if [[ "$unit" != *.service ]]; then
+      unit="${unit}.service"
+    fi
+
+    _header "STATUS: ${unit}"
+    sudo systemctl status --no-pager --full "$unit"
+
+    echo
+    _header "LOGS DO BOOT ATUAL: ${unit}"
+    sudo journalctl -u "$unit" -b --no-pager -n 50
+  }
+
+  _help() {
+    cat <<EOF
+Uso:
+  services              -> visão curta e útil no dia a dia
+  services all          -> visão mais completa
+  services <servico>    -> inspeciona um serviço específico
+  services help         -> mostra esta ajuda
+
+Exemplos:
+  services
+  services all
+  services ssh
+  services cron
+  services NetworkManager
+  services zerotier-one.service
+EOF
+  }
+
+  case "$1" in
+    "" )
+      _header "SERVIÇOS - VISÃO GERAL"
+      printf "%bHostname:%b %s\n" "$BOLD" "$RESET" "$(hostname)"
+      printf "%bBoot atual:%b %s\n" "$BOLD" "$RESET" "$(uptime -s 2>/dev/null)"
+      _summary_counts
+      echo
+
+      _header "Serviços em execução (running)"
+      _print_running
+      echo
+
+      _header "Serviços com falha (failed)"
+      _print_failed
+      echo
+
+      _header "Unidades instaladas (enabled / disabled / masked / static)"
+      _print_unit_files_short
+      echo
+
+      _header "Legenda"
+      _legend_short
+      ;;
+    all )
+      _header "SERVIÇOS - VISÃO COMPLETA"
+      printf "%bHostname:%b %s\n" "$BOLD" "$RESET" "$(hostname)"
+      printf "%bBoot atual:%b %s\n" "$BOLD" "$RESET" "$(uptime -s 2>/dev/null)"
+      _summary_counts
+      echo
+
+      _header "Serviços em execução (running)"
+      _print_running
+      echo
+
+      _header "Serviços com falha (failed)"
+      _print_failed
+      echo
+
+      _header "Todas as service unit-files"
+      _print_unit_files_all
+      echo
+
+      _header "Legenda"
+      _legend_all
+      ;;
+    help|-h|--help )
+      _help
+      ;;
+    * )
+      _inspect_service "$1"
+      ;;
+  esac
+}
+
+
+
+
+
+
+
+servdebug() {
+    local svc="$1"
+
+    if [ -z "$svc" ]; then
+        echo "Uso: servdebug nome-do-servico"
+        echo "Exemplo: servdebug ssh"
+        echo "Exemplo: servdebug NetworkManager.service"
+        return 1
+    fi
+
+    [[ "$svc" != *.service ]] && svc="${svc}.service"
+
+    local R='\e[1;31m'
+    local G='\e[1;32m'
+    local Y='\e[1;33m'
+    local B='\e[1;34m'
+    local C='\e[1;36m'
+    local D='\e[2m'
+    local X='\e[0m'
+
+    printf "\n${C}=== Guia prático para debugar: %s ===${X}\n\n" "$svc"
+
+    printf "${B}1) Ver estado atual${X}\n"
+    printf "   ${G}systemctl status %s --no-pager -l${X}\n" "$svc"
+    printf "   ${D}Mostra se está active, failed, inactive, quando iniciou, PID principal e últimas mensagens do journal.${X}\n\n"
+
+    printf "${B}2) Ver se o serviço está habilitado no boot${X}\n"
+    printf "   ${G}systemctl is-enabled %s${X}\n" "$svc"
+    printf "   ${D}Mostra se inicia automaticamente na inicialização.${X}\n\n"
+
+    printf "${B}3) Ver se está realmente rodando agora${X}\n"
+    printf "   ${G}systemctl is-active %s${X}\n" "$svc"
+    printf "   ${D}Resposta curta: active, inactive, failed, etc.${X}\n\n"
+
+    printf "${B}4) Ler logs recentes do serviço${X}\n"
+    printf "   ${G}journalctl -u %s -b --no-pager -n 50${X}\n" "$svc"
+    printf "   ${D}Mostra as últimas 50 linhas do boot atual. É um dos comandos mais úteis.${X}\n\n"
+
+    printf "${B}5) Seguir logs ao vivo${X}\n"
+    printf "   ${G}journalctl -fu %s${X}\n" "$svc"
+    printf "   ${D}Equivalente a um tail -f dos logs do serviço.${X}\n\n"
+
+    printf "${B}6) Ver erros do boot atual${X}\n"
+    printf "   ${G}journalctl -u %s -b -p warning --no-pager${X}\n" "$svc"
+    printf "   ${D}Filtra warning, error, critical, alert e emerg.${X}\n\n"
+
+    printf "${B}7) Descobrir como o serviço é iniciado${X}\n"
+    printf "   ${G}systemctl cat %s${X}\n" "$svc"
+    printf "   ${D}Mostra o unit file completo, inclusive overrides. Procure principalmente por:${X}\n"
+    printf "   ${D}ExecStart=, ExecStartPre=, ExecStartPost=, User=, Group=, WorkingDirectory=, Environment=${X}\n\n"
+
+    printf "${B}8) Ver propriedades técnicas importantes${X}\n"
+    printf "   ${G}systemctl show %s -p Id -p Names -p LoadState -p ActiveState -p SubState -p UnitFileState -p MainPID -p ExecMainStatus -p ExecStart -p FragmentPath${X}\n" "$svc"
+    printf "   ${D}Útil para ver estado interno sem o texto mais “bonito” do status.${X}\n\n"
+
+    printf "${B}9) Ver o processo principal e PIDs relacionados${X}\n"
+    printf "   ${G}systemctl status %s --no-pager -l${X}\n" "$svc"
+    printf "   ${G}ps -fp \$(systemctl show -p MainPID --value %s)${X}\n" "$svc"
+    printf "   ${D}Se MainPID for 0, o serviço não tem processo principal ativo.${X}\n\n"
+
+    printf "${B}10) Ver a árvore de processos do serviço${X}\n"
+    printf "   ${G}pstree -ap \$(systemctl show -p MainPID --value %s)${X}\n" "$svc"
+    printf "   ${D}Bom para serviços que lançam subprocessos.${X}\n\n"
+
+    printf "${B}11) Testar reinício manual${X}\n"
+    printf "   ${Y}sudo systemctl restart %s${X}\n" "$svc"
+    printf "   ${Y}systemctl status %s --no-pager -l${X}\n" "$svc"
+    printf "   ${D}Reinicia e já confere imediatamente o resultado.${X}\n\n"
+
+    printf "${B}12) Se falhar logo após reiniciar, veja o código de saída${X}\n"
+    printf "   ${G}systemctl show %s -p ExecMainStatus -p Result${X}\n" "$svc"
+    printf "   ${D}Ajuda a distinguir falha do processo, timeout, signal, etc.${X}\n\n"
+
+    printf "${B}13) Procurar dependências quebradas${X}\n"
+    printf "   ${G}systemctl list-dependencies %s${X}\n" "$svc"
+    printf "   ${D}Útil quando o serviço depende de rede, mount, database, outro daemon, etc.${X}\n\n"
+
+    printf "${B}14) Ver se há override local${X}\n"
+    printf "   ${G}systemctl cat %s${X}\n" "$svc"
+    printf "   ${D}Se houver trecho em /etc/systemd/system/, ele sobrescreve o unit original.${X}\n\n"
+
+    printf "${B}15) Comandos de controle mais usados${X}\n"
+    printf "   ${Y}sudo systemctl stop %s${X}\n" "$svc"
+    printf "   ${Y}sudo systemctl start %s${X}\n" "$svc"
+    printf "   ${Y}sudo systemctl restart %s${X}\n" "$svc"
+    printf "   ${Y}sudo systemctl enable %s${X}\n" "$svc"
+    printf "   ${Y}sudo systemctl disable %s${X}\n" "$svc"
+    printf "   ${D}Use enable/disable para boot; start/stop/restart para agora.${X}\n\n"
+
+    printf "${C}=== Ordem prática de investigação ===${X}\n\n"
+    printf "   1. systemctl status %s --no-pager -l\n" "$svc"
+    printf "   2. journalctl -u %s -b --no-pager -n 50\n" "$svc"
+    printf "   3. systemctl cat %s\n" "$svc"
+    printf "   4. systemctl show %s -p MainPID -p ExecMainStatus -p Result\n" "$svc"
+    printf "   5. sudo systemctl restart %s\n" "$svc"
+    printf "   6. journalctl -fu %s\n" "$svc"
+
+    printf "\n${C}=== O que observar ===${X}\n\n"
+    printf "   ${D}- ActiveState/SubState: active, failed, inactive, activating${X}\n"
+    printf "   ${D}- MainPID: processo principal real do serviço${X}\n"
+    printf "   ${D}- ExecMainStatus: código de saída do processo${X}\n"
+    printf "   ${D}- Result: success, exit-code, signal, timeout, etc.${X}\n"
+    printf "   ${D}- ExecStart=: comando real que o systemd executa${X}\n"
+    printf "   ${D}- Journal: mensagens de erro, permissões, caminho inexistente, porta ocupada, config inválida${X}\n\n"
+}
+
+
+
+servinspect() {
+    local svc="$1"
+
+    if [ -z "$svc" ]; then
+        echo "Uso: servinspect nome-do-servico"
+        echo "Exemplo: servinspect ssh"
+        echo "Exemplo: servinspect NetworkManager.service"
+        return 1
+    fi
+
+    [[ "$svc" != *.service ]] && svc="${svc}.service"
+
+    local R='\e[1;31m'
+    local G='\e[1;32m'
+    local Y='\e[1;33m'
+    local B='\e[1;34m'
+    local C='\e[1;36m'
+    local D='\e[2m'
+    local X='\e[0m'
+
+    local mainpid
+    mainpid="$(systemctl show -p MainPID --value "$svc" 2>/dev/null)"
+
+    printf "\n${C}=== Inspeção de serviço: %s ===${X}\n\n" "$svc"
+
+    printf "${B}--- Estado resumido ---${X}\n"
+    systemctl is-active "$svc" 2>/dev/null | sed "s/^/${D}is-active:${X} /"
+    systemctl is-enabled "$svc" 2>/dev/null | sed "s/^/${D}is-enabled:${X} /"
+    echo
+
+    printf "${B}--- Status detalhado ---${X}\n"
+    systemctl status "$svc" --no-pager -l 2>&1
+    echo
+
+    printf "${B}--- Propriedades técnicas ---${X}\n"
+    systemctl show "$svc" \
+        -p Id \
+        -p LoadState \
+        -p ActiveState \
+        -p SubState \
+        -p UnitFileState \
+        -p MainPID \
+        -p ExecMainStatus \
+        -p Result \
+        -p FragmentPath \
+        2>/dev/null
+    echo
+
+    printf "${B}--- Unit file / override ---${X}\n"
+    systemctl cat "$svc" 2>&1
+    echo
+
+    printf "${B}--- Últimos logs do boot atual ---${X}\n"
+    journalctl -u "$svc" -b --no-pager -n 40 2>&1
+    echo
+
+    if [ -n "$mainpid" ] && [ "$mainpid" != "0" ]; then
+        printf "${B}--- Processo principal ---${X}\n"
+        ps -fp "$mainpid" 2>&1
+        echo
+
+        if command -v pstree >/dev/null 2>&1; then
+            printf "${B}--- Árvore de processos ---${X}\n"
+            pstree -ap "$mainpid" 2>&1
+            echo
+        fi
+    else
+        printf "${Y}Sem MainPID ativo no momento.${X}\n\n"
+    fi
+
+    printf "${C}=== Próximos passos úteis ===${X}\n"
+    printf "journalctl -fu %s\n" "$svc"
+    printf "sudo systemctl restart %s\n" "$svc"
+    printf "systemctl show %s -p MainPID -p ExecMainStatus -p Result\n" "$svc"
+    printf "\n"
+}
