@@ -117,3 +117,5 @@ export LD_LIBRARY_PATH="/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PAT
 # Carregar aliases e funções
 [ -f "$HOME/.10-bash_aliases" ] && . "$HOME/.10-bash_aliases"
 [ -f "$HOME/.20-bash_functions" ] && . "$HOME/.20-bash_functions"
+[ -f "$HOME/.30-bash_services" ] && . "$HOME/.30-bash_services"
+[ -f "$HOME/.40-bash_paths" ] && . "$HOME/.40-bash_paths"
