@@ -1,0 +1,220 @@
+
+
+path() {
+  cat <<'EOF'
+Boas práticas para diagnosticar PATH e ambientes:
+
+1) which python && which pip
+   Mostra qual executável "python" e "pip" será chamado quando você digita "python". Importante para verificar se ele está no mesmo ambiente do Python.
+
+3) echo $PATH
+   Exibe a variável PATH completa, na ordem em que os diretórios são consultados.
+
+4) type -a python
+   Mostra todas as ocorrências de "python" encontradas pelo shell, não apenas a primeira.
+
+5) type -a pip
+   Mostra todas as ocorrências de "pip" encontradas pelo shell.
+
+6) command -v python
+   Forma mais confiável e portável de descobrir qual comando será usado para "python".
+
+7) command -v pip
+   Forma mais confiável e portável de descobrir qual comando será usado para "pip".
+
+8) python -m pip --version
+   Mostra qual pip pertence exatamente ao Python chamado no momento.
+   Esta é uma das verificações mais importantes.
+
+9) python -c "import sys; print(sys.executable)"
+   Mostra o caminho exato do interpretador Python em uso.
+
+10) python -c "import sys; print(sys.path)"
+    Mostra os diretórios onde o Python procura módulos e pacotes.
+
+11) env | grep -E 'PATH|VIRTUAL_ENV|CONDA'
+    Mostra variáveis de ambiente relevantes para PATH e ambientes virtuais.
+
+12) alias | grep python
+    Verifica se existe algum alias alterando o comportamento do comando python.
+
+13) hash -r
+    Limpa o cache interno de comandos do shell.
+    Útil depois de alterar PATH ou trocar de ambiente.
+
+14) ls -l "$(command -v python)"
+    Mostra detalhes do executável encontrado, inclusive se ele for link simbólico.
+
+15) readlink -f "$(command -v python)"
+    Resolve o caminho real do binário python, seguindo links simbólicos.
+
+Regra de ouro:
+- Prefira sempre: python -m pip install pacote
+  Isso reduz o risco de instalar pacote no Python errado.
+
+Dica prática:
+- Se "which python" e "which pip" apontarem para lugares diferentes, desconfie.
+- Se o diretório do ambiente estiver no começo do PATH, ele terá prioridade.
+EOF
+}
+
+
+
+
+
+
+
+pathcheck() {
+    local c_reset='\e[0m'
+    local c_title='\e[1;36m'
+    local c_ok='\e[1;32m'
+    local c_warn='\e[1;33m'
+    local c_err='\e[1;31m'
+    local c_key='\e[1;34m'
+    local c_dim='\e[2m'
+
+    local py pip py_real pip_real py_exec py_pip_version
+    local py_dir pip_dir
+    local path_count=0
+    local mismatch=0
+
+    py="$(command -v python 2>/dev/null)"
+    pip="$(command -v pip 2>/dev/null)"
+
+    py_real=""
+    pip_real=""
+    py_exec=""
+    py_pip_version=""
+
+    [ -n "$py" ] && py_real="$(readlink -f "$py" 2>/dev/null)"
+    [ -n "$pip" ] && pip_real="$(readlink -f "$pip" 2>/dev/null)"
+
+    if [ -n "$py" ]; then
+        py_exec="$(python -c 'import sys; print(sys.executable)' 2>/dev/null)"
+        py_pip_version="$(python -m pip --version 2>/dev/null)"
+    fi
+
+    [ -n "$py_real" ] && py_dir="$(dirname "$py_real")"
+    [ -n "$pip_real" ] && pip_dir="$(dirname "$pip_real")"
+
+    if [ -n "$py_dir" ] && [ -n "$pip_dir" ] && [ "$py_dir" != "$pip_dir" ]; then
+        mismatch=1
+    fi
+
+    printf "\n${c_title}=== Diagnóstico de PATH / Python / pip ===${c_reset}\n\n"
+
+    printf "${c_key}python encontrado:${c_reset} "
+    if [ -n "$py" ]; then
+        printf "${c_ok}%s${c_reset}\n" "$py"
+    else
+        printf "${c_err}não encontrado${c_reset}\n"
+    fi
+
+    printf "${c_key}pip encontrado:${c_reset}    "
+    if [ -n "$pip" ]; then
+        printf "${c_ok}%s${c_reset}\n" "$pip"
+    else
+        printf "${c_err}não encontrado${c_reset}\n"
+    fi
+
+    if [ -n "$py_real" ]; then
+        printf "${c_key}python real:${c_reset}      ${c_dim}%s${c_reset}\n" "$py_real"
+    fi
+
+    if [ -n "$pip_real" ]; then
+        printf "${c_key}pip real:${c_reset}         ${c_dim}%s${c_reset}\n" "$pip_real"
+    fi
+
+    if [ -n "$py_exec" ]; then
+        printf "${c_key}sys.executable:${c_reset}  ${c_dim}%s${c_reset}\n" "$py_exec"
+    fi
+
+    if [ -n "$py_pip_version" ]; then
+        printf "${c_key}python -m pip:${c_reset}    ${c_dim}%s${c_reset}\n" "$py_pip_version"
+    fi
+
+    printf "\n${c_title}=== Ambiente ativo ===${c_reset}\n\n"
+
+    if [ -n "$VIRTUAL_ENV" ]; then
+        printf "${c_key}VIRTUAL_ENV:${c_reset}     ${c_ok}%s${c_reset}\n" "$VIRTUAL_ENV"
+    else
+        printf "${c_key}VIRTUAL_ENV:${c_reset}     ${c_dim}não definido${c_reset}\n"
+    fi
+
+    if [ -n "$CONDA_PREFIX" ]; then
+        printf "${c_key}CONDA_PREFIX:${c_reset}    ${c_ok}%s${c_reset}\n" "$CONDA_PREFIX"
+    else
+        printf "${c_key}CONDA_PREFIX:${c_reset}    ${c_dim}não definido${c_reset}\n"
+    fi
+
+    if [ -n "$MAMBA_ROOT_PREFIX" ]; then
+        printf "${c_key}MAMBA_ROOT_PREFIX:${c_reset} ${c_ok}%s${c_reset}\n" "$MAMBA_ROOT_PREFIX"
+    else
+        printf "${c_key}MAMBA_ROOT_PREFIX:${c_reset} ${c_dim}não definido${c_reset}\n"
+    fi
+
+    printf "\n${c_title}=== Início do PATH (prioridade real) ===${c_reset}\n\n"
+    while IFS=: read -r item; do
+        path_count=$((path_count + 1))
+        printf "%2d) %s\n" "$path_count" "$item"
+        [ "$path_count" -ge 8 ] && break
+    done <<< "$(printf '%s\n' "$PATH" | tr ':' '\n' | paste -sd ':' -)"
+
+    printf "\n${c_title}=== Veredito ===${c_reset}\n\n"
+
+    if [ -z "$py" ]; then
+        printf "${c_err}Python não está no PATH.${c_reset}\n"
+        return 1
+    fi
+
+    if [ -z "$pip" ]; then
+        printf "${c_warn}pip não está no PATH.${c_reset}\n"
+        printf "${c_warn}Use preferencialmente: python -m pip ...${c_reset}\n"
+        return 0
+    fi
+
+    if [ "$mismatch" -eq 1 ]; then
+        printf "${c_warn}Atenção:${c_reset} python e pip vêm de diretórios diferentes.\n"
+        printf "${c_warn}Isso pode indicar ambiente misturado.${c_reset}\n"
+        printf "${c_warn}Prefira sempre: python -m pip install <pacote>${c_reset}\n"
+    else
+        printf "${c_ok}python e pip parecem coerentes entre si.${c_reset}\n"
+    fi
+
+    if [ -n "$VIRTUAL_ENV" ] || [ -n "$CONDA_PREFIX" ]; then
+        printf "${c_ok}Há um ambiente virtual ativo.${c_reset}\n"
+    else
+        printf "${c_dim}Nenhum venv/conda explícito detectado.${c_reset}\n"
+    fi
+
+    printf "\n"
+}
+
+
+
+
+
+
+
+pathdebug() {
+    echo "== command -v =="
+    command -v python
+    command -v pip
+    echo
+
+    echo "== type -a =="
+    type -a python
+    type -a pip
+    echo
+
+    echo "== aliases relacionados =="
+    alias | grep -E '(^alias python=|^alias pip=)' || echo "Nenhum alias para python/pip"
+    echo
+
+    echo "== variáveis relevantes =="
+    env | grep -E '^(PATH|VIRTUAL_ENV|CONDA_PREFIX|MAMBA_ROOT_PREFIX)='
+    echo
+
+    echo "== sys.path =="
+    python -c 'import sys; print("\n".join(sys.path))' 2>/dev/null
+}
