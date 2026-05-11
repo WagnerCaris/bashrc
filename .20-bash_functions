@@ -3,53 +3,77 @@
 
 # ====== Mini "framework" (cores + helpers) ======
 # Só usa cor se o terminal suportar
-__has_color() { [ -t 1 ] && command -v tput >/dev/null 2>&1 && [ "$(tput colors 2>/dev/null)" -ge 8 ]; }
+__has_color() {
+  [ -t 1 ] && command -v tput >/dev/null 2>&1 && [ "$(tput colors 2>/dev/null)" -ge 8 ]
+}
 
 __c() { # __c CODE "texto"
-  if __has_color; then printf "\e[%sm%s\e[0m" "$1" "$2"; else printf "%s" "$2"; fi
+  if __has_color; then
+    printf "\e[%sm%s\e[0m" "$1" "$2"
+  else
+    printf "%s" "$2"
+  fi
 }
 
 msg()  { printf "%s\n" "$(__c '1;32' "✔") $*"; }
 warn() { printf "%s\n" "$(__c '1;33' "⚠") $*"; }
 err()  { printf "%s\n" "$(__c '1;31' "✖") $*"; }
 
-need() { # need comando
+need() { # need comando_no_PATH
   command -v "$1" >/dev/null 2>&1 || { err "Comando ausente: $1"; return 127; }
+}
+
+need_bin() { # need_bin /caminho/absoluto/do/binario
+  [ -x "$1" ] || { err "Comando ausente: $1"; return 127; }
 }
 
 sep() { # sep [TITULO]
   local count="${SEP_WIDTH:-30}"
   local line
-  line="$(printf "%*s" "$count" "" | tr " " "=")"
+  line="$(printf "%*s" "$count" "" | /usr/bin/tr " " "=")"
 
   echo
-  if __has_color; then printf "\e[1;34m%s\e[0m\n" "$line"; else printf "%s\n" "$line"; fi
+  if __has_color; then
+    printf "\e[1;34m%s\e[0m\n" "$line"
+  else
+    printf "%s\n" "$line"
+  fi
+
   [ -n "$1" ] && echo "$1"
-  if __has_color; then printf "\e[1;34m%s\e[0m\n" "$line"; else printf "%s\n" "$line"; fi
+
+  if __has_color; then
+    printf "\e[1;34m%s\e[0m\n" "$line"
+  else
+    printf "%s\n" "$line"
+  fi
   echo
 }
 
 # ====== Suas funções ======
 
 df() {
-  [ -x /usr/bin/df ] || { err "df não encontrado em /usr/bin/df"; return 127; }
+  need_bin /usr/bin/df || return
+  need_bin /bin/grep || return
+  need_bin /usr/bin/column || return
+
   echo "==== Internal Disks ===="
-  /usr/bin/df -hT | grep -E "^Filesystem|/dev/sd|/dev/nvme|/dev/mmc" | column -t
+  /usr/bin/df -hT | /bin/grep -E "^Filesystem|/dev/sd|/dev/nvme|/dev/mmc" | /usr/bin/column -t
+
   echo
   echo "==== Removable Disks ===="
-  /usr/bin/df -hT | grep -E "/media|/mnt" | column -t
+  /usr/bin/df -hT | /bin/grep -E "/media|/mnt" | /usr/bin/column -t
 }
 
-
 bigdirs() {
-  need du || return
-  need sort || return
-  need head || return
+  need_bin /usr/bin/sudo || return
+  need_bin /usr/bin/du || return
+  need_bin /usr/bin/sort || return
+  need_bin /usr/bin/head || return
 
   local target="${1:-.}"
   local limit="${2:-20}"
 
-  sudo du -xh --max-depth=1 \
+  /usr/bin/sudo /usr/bin/du -xh --max-depth=1 \
     --exclude=/proc \
     --exclude=/sys \
     --exclude=/dev \
@@ -57,28 +81,30 @@ bigdirs() {
     --exclude=/snap \
     --exclude=/tmp \
     "$target" 2>/dev/null \
-  | sort -hr \
-  | head -n "$limit"
+  | /usr/bin/sort -hr \
+  | /usr/bin/head -n "$limit"
 }
 
 bigarchives() {
-  need find || return
-  need sort || return
-  need head || return
+  need_bin /usr/bin/sudo || return
+  need_bin /usr/bin/find || return
+  need_bin /usr/bin/sort || return
+  need_bin /usr/bin/head || return
+  need_bin /usr/bin/awk || return
 
   local target="${1:-$HOME}"
   local size="${2:-5G}"
   local limit="${3:-20}"
 
-  sudo find "$target" -xdev \
+  /usr/bin/sudo /usr/bin/find "$target" -xdev \
     \( -path /proc -o -path /sys -o -path /dev -o -path /run -o -path /tmp \) -prune -o \
     -type f \( \
       -iname "*.zip" -o -iname "*.tar" -o -iname "*.tar.gz" -o -iname "*.tgz" \
       -o -iname "*.gz" -o -iname "*.7z" -o -iname "*.rar" \
     \) -size +"$size" -printf '%s\t%p\n' 2>/dev/null \
-  | sort -nr \
-  | head -n "$limit" \
-  | awk '{
+  | /usr/bin/sort -nr \
+  | /usr/bin/head -n "$limit" \
+  | /usr/bin/awk '{
       size=$1
       path=$2
       unit="B"
@@ -90,237 +116,224 @@ bigarchives() {
     }'
 }
 
-
-
 size() {
   if [ $# -eq 0 ]; then
-    sep  "  Disk usage helpers"
-    echo "  size dirs [PATH] [N]          → Top N diretórios maiores"
-    echo "  size archives [PATH] [SIZE] [N] → Archives maiores que SIZE"
+    sep "  Disk usage helpers"
+    echo "  size dirs [PATH] [N]              → Top N diretórios maiores"
+    echo "  size archives [PATH] [SIZE] [N]   → Archives maiores que SIZE"
     echo
     echo "Exemplos:"
-    echo "  size dirs      ex.:/container/proc/ mostra o tamanho do diretório proc/"
-    echo
-    echo "  size archives  ex.:/home   mostra o tamnhado do diretório home"
+    echo "  size dirs /home 20"
+    echo "  size archives /home 1G 20"
     echo
     return 0
   fi
 
   case "$1" in
-    dirs)     shift; bigdirs "$@";;
-    archives) shift; bigarchives "$@";;
-    help|-h|--help) shift; size;;
-    *) err "Opção inválida: $1"; warn "Use: size"; return 2;;
+    dirs)      shift; bigdirs "$@" ;;
+    archives)  shift; bigarchives "$@" ;;
+    help|-h|--help) shift; size ;;
+    *) err "Opção inválida: $1"; warn "Use: size"; return 2 ;;
   esac
 }
 
-
 scp() {
-    if [ $# -eq 0 ]; then
-        echo -e "\n🚀 Tip: Use scp like this → scp FILE user@host:/path/"
-        echo -e "Example: scp data.txt radaz@192.168.0.10:/tmp/\n"
-    else
-        command /usr/bin/scp "$@"
-    fi
+  if [ $# -eq 0 ]; then
+    echo -e "\n🚀 Tip: Use scp like this → scp FILE user@host:/path/"
+    echo -e "Example: scp data.txt radaz@192.168.0.10:/tmp/\n"
+  else
+    /usr/bin/scp "$@"
+  fi
 }
 
 rsync() {
-    if [ $# -eq 0 ]; then
-        echo -e "\n📦 Tip: Use rsync like this:"
-        echo -e "  rsync -avh --progress SOURCE DESTINATION"
-        echo
-        echo -e "Examples:"
-        echo -e "  Local → local:"
-        echo -e "    rsync -avh --progress /home/proc/ /mnt/backup/"
-        echo
-        echo -e "  Local → remote:"
-        echo -e "    rsync -avh --progress /home/proc/archive.txt radaz@192.168.8.15:/mnt/backup/\n"
-    else
-        command /usr/bin/rsync "$@"
-    fi
+  if [ $# -eq 0 ]; then
+    echo -e "\n📦 Tip: Use rsync like this:"
+    echo -e "  rsync -avh --progress SOURCE DESTINATION"
+    echo
+    echo -e "Examples:"
+    echo -e "  Local → local:"
+    echo -e "    rsync -avh --progress /home/proc/ /mnt/backup/"
+    echo
+    echo -e "  Local → remote:"
+    echo -e "    rsync -avh --progress /home/proc/archive.txt radaz@192.168.8.15:/mnt/backup/\n"
+  else
+    /usr/bin/rsync "$@"
+  fi
 }
-
 
 ssh() {
-    if [ $# -eq 0 ]; then
-        echo -e "\n🔐 Tip: Use SSH like this → ssh -X user@host"
-        echo -e "Example: ssh -X radaz@192.168.0.10\n"
-    else
-        command /usr/bin/ssh "$@"
-    fi
+  if [ $# -eq 0 ]; then
+    echo -e "\n🔐 Tip: Use SSH like this → ssh -X user@host"
+    echo -e "Example: ssh -X radaz@192.168.0.10\n"
+  else
+    /usr/bin/ssh "$@"
+  fi
 }
 
+extract() {
+  if [ $# -eq 0 ]; then
+    echo "Uso: extract ARQUIVO"
+    return 2
+  fi
 
-extract () {
-    if [ -f "$1" ]; then
-       	case "$1" in
-           	*.tar.bz2)   tar xjf "$1" ;;
-           	*.tar.gz)    tar xzf "$1" ;;
-           	*.tar.xz)    tar xJf "$1" ;;
-           	*.tar.zst)   tar --zstd -xf "$1" ;;
-           	*.tar)       tar xf "$1" ;;
-           	*.tbz2)      tar xjf "$1" ;;
-           	*.tgz)       tar xzf "$1" ;;
-           	*.zip)       unzip "$1" ;;
-           	*.rar)       unrar x "$1" ;;
-           	*.7z)        7z x "$1" ;;
-           	*.gz)        gunzip "$1" ;;
-           	*.bz2)       bunzip2 "$1" ;;
-           	*.xz)        unxz "$1" ;;
-           	*.Z)         uncompress "$1" ;;
-           	*)           echo "extract: '$1' - unsupported file type" ;;
-       	esac
-   	else
-   	    echo "extract: '$1' is not a valid file"
-   	fi
+  if [ -f "$1" ]; then
+    case "$1" in
+      *.tar.bz2) need_bin /usr/bin/tar || return; /usr/bin/tar xjf "$1" ;;
+      *.tar.gz)  need_bin /usr/bin/tar || return; /usr/bin/tar xzf "$1" ;;
+      *.tar.xz)  need_bin /usr/bin/tar || return; /usr/bin/tar xJf "$1" ;;
+      *.tar.zst) need_bin /usr/bin/tar || return; /usr/bin/tar --zstd -xf "$1" ;;
+      *.tar)     need_bin /usr/bin/tar || return; /usr/bin/tar xf "$1" ;;
+      *.tbz2)    need_bin /usr/bin/tar || return; /usr/bin/tar xjf "$1" ;;
+      *.tgz)     need_bin /usr/bin/tar || return; /usr/bin/tar xzf "$1" ;;
+      *.zip)     need_bin /usr/bin/unzip || return; /usr/bin/unzip "$1" ;;
+      *.rar)     need_bin /usr/bin/unrar || return; /usr/bin/unrar x "$1" ;;
+      *.7z)      need_bin /usr/bin/7z || return; /usr/bin/7z x "$1" ;;
+      *.gz)      need_bin /usr/bin/gunzip || return; /usr/bin/gunzip "$1" ;;
+      *.bz2)     need_bin /usr/bin/bunzip2 || return; /usr/bin/bunzip2 "$1" ;;
+      *.xz)      need_bin /usr/bin/unxz || return; /usr/bin/unxz "$1" ;;
+      *.Z)       need_bin /usr/bin/uncompress || return; /usr/bin/uncompress "$1" ;;
+      *)         echo "extract: '$1' - unsupported file type"; return 2 ;;
+    esac
+  else
+    echo "extract: '$1' is not a valid file"
+    return 2
+  fi
 }
-
-
-
-
-
-
 
 # Função que detecta automaticamente a sub-rede e faz o scan amigável
 nmapscan() {
-    local detected_ip input range
-    local oct1 oct2 oct3 oct4 oct mask
+  local detected_ip input range
+  local oct1 oct2 oct3 oct4 oct mask
 
-    command -v nmap >/dev/null 2>&1 || {
-        echo "Erro: nmap não está instalado."
-        echo "Instale com: sudo apt install nmap"
-        return 1
+  need_bin /usr/bin/sudo || return
+  need_bin /usr/bin/nmap || {
+    echo "Erro: nmap não está instalado."
+    echo "Instale com: sudo apt install nmap"
+    return 1
+  }
+  need_bin /bin/hostname || return
+  need_bin /usr/bin/awk || return
+
+  detected_ip=$(/bin/hostname -I 2>/dev/null | /usr/bin/awk '{print $1}')
+
+  echo "Informe um IP ou uma rede CIDR para escaneamento."
+  echo "Exemplos:"
+  echo "  192.168.168.36      -> escaneia 192.168.168.0/24"
+  echo "  192.168.168.0/24    -> escaneia exatamente essa rede"
+  echo "  10.0.0.0/16         -> escaneia exatamente essa rede"
+  echo
+
+  read -r -e -p "IP ou rede [${detected_ip}]: " input
+  input=${input:-$detected_ip}
+
+  if [[ -z "$input" ]]; then
+    echo "Erro: não foi possível detectar IP automaticamente e nada foi informado."
+    return 2
+  fi
+
+  if [[ "$input" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+    IFS='/.' read -r oct1 oct2 oct3 oct4 mask <<< "$input"
+
+    for oct in "$oct1" "$oct2" "$oct3" "$oct4"; do
+      if ! [[ "$oct" =~ ^[0-9]+$ ]] || [ "$oct" -lt 0 ] || [ "$oct" -gt 255 ]; then
+        echo "Erro: rede CIDR inválida."
+        return 2
+      fi
+    done
+
+    if ! [[ "$mask" =~ ^[0-9]+$ ]] || [ "$mask" -lt 0 ] || [ "$mask" -gt 32 ]; then
+      echo "Erro: máscara CIDR inválida."
+      return 2
+    fi
+
+    range="$input"
+
+  elif [[ "$input" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    IFS='.' read -r oct1 oct2 oct3 oct4 <<< "$input"
+
+    for oct in "$oct1" "$oct2" "$oct3" "$oct4"; do
+      if ! [[ "$oct" =~ ^[0-9]+$ ]] || [ "$oct" -lt 0 ] || [ "$oct" -gt 255 ]; then
+        echo "Erro: IP inválido."
+        return 2
+      fi
+    done
+
+    range="${oct1}.${oct2}.${oct3}.0/24"
+
+  else
+    echo "Erro: entrada inválida."
+    echo "Use um IP (ex.: 192.168.168.36) ou CIDR (ex.: 192.168.168.0/24)."
+    return 2
+  fi
+
+  echo
+  echo "=================================================="
+  echo "Escaneando rede: $range"
+  echo "Comando: sudo nmap -sn $range"
+  echo "=================================================="
+
+  /usr/bin/sudo /usr/bin/nmap -sn "$range" 2>/dev/null | /usr/bin/awk '
+    /^Nmap scan report for / {
+      if (host_printed) printf "\n"
+      host=$NF
+      printf "Host: %-16s", host
+      host_printed=1
+      mac_printed=0
     }
+    /^MAC Address: / {
+      mac=$3
+      vendor=""
+      for (i=4; i<=NF; i++) {
+        vendor = vendor $i (i<NF ? " " : "")
+      }
+      gsub(/[()]/, "", vendor)
+      printf "  MAC: %-18s  Fabricante: %s", mac, vendor
+      mac_printed=1
+    }
+    END {
+      if (host_printed) printf "\n"
+    }
+  '
 
-    detected_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
-
-    echo "Informe um IP ou uma rede CIDR para escaneamento."
-    echo "Exemplos:"
-    echo "  192.168.168.36      -> escaneia 192.168.168.0/24"
-    echo "  192.168.168.0/24    -> escaneia exatamente essa rede"
-    echo "  10.0.0.0/16         -> escaneia exatamente essa rede"
-    echo
-
-    read -r -e -p "IP ou rede [${detected_ip}]: " input
-    input=${input:-$detected_ip}
-
-    if [[ -z "$input" ]]; then
-        echo "Erro: não foi possível detectar IP automaticamente e nada foi informado."
-        return 2
-    fi
-
-    if [[ "$input" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
-        IFS='/.' read -r oct1 oct2 oct3 oct4 mask <<< "$input"
-
-        for oct in "$oct1" "$oct2" "$oct3" "$oct4"; do
-            if ! [[ "$oct" =~ ^[0-9]+$ ]] || [ "$oct" -lt 0 ] || [ "$oct" -gt 255 ]; then
-                echo "Erro: rede CIDR inválida."
-                return 2
-            fi
-        done
-
-        if ! [[ "$mask" =~ ^[0-9]+$ ]] || [ "$mask" -lt 0 ] || [ "$mask" -gt 32 ]; then
-            echo "Erro: máscara CIDR inválida."
-            return 2
-        fi
-
-        range="$input"
-
-    elif [[ "$input" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-        IFS='.' read -r oct1 oct2 oct3 oct4 <<< "$input"
-
-        for oct in "$oct1" "$oct2" "$oct3" "$oct4"; do
-            if ! [[ "$oct" =~ ^[0-9]+$ ]] || [ "$oct" -lt 0 ] || [ "$oct" -gt 255 ]; then
-                echo "Erro: IP inválido."
-                return 2
-            fi
-        done
-
-        range="${oct1}.${oct2}.${oct3}.0/24"
-
-    else
-        echo "Erro: entrada inválida."
-        echo "Use um IP (ex.: 192.168.168.36) ou CIDR (ex.: 192.168.168.0/24)."
-        return 2
-    fi
-
-    echo
-    echo "=================================================="
-    echo "Escaneando rede: $range"
-    echo "Comando: sudo nmap -sn $range"
-    echo "=================================================="
-
-    sudo nmap -sn "$range" 2>/dev/null | awk '
-        /^Nmap scan report for / {
-            if (host_printed) printf "\n"
-            host=$NF
-            printf "Host: %-16s", host
-            host_printed=1
-            mac_printed=0
-        }
-        /^MAC Address: / {
-            mac=$3
-            vendor=""
-            for (i=4; i<=NF; i++) {
-                vendor = vendor $i (i<NF ? " " : "")
-            }
-            gsub(/[()]/, "", vendor)
-            printf "  MAC: %-18s  Fabricante: %s", mac, vendor
-            mac_printed=1
-        }
-        END {
-            if (host_printed) printf "\n"
-        }
-    '
-
-    echo
+  echo
 }
-
-
-
 
 fpga() {
-    echo "================ FPGA ENV HELP ================"
-    echo ""
-    echo "📁 Projeto:"
-    echo "  cd ~/fpga-lab"
-    echo ""
-    echo "🐍 Ativar ambiente:"
-    echo "  source .fpga-env/bin/activate"
-    echo ""
-    echo "🚫 NÃO FAZER:"
-    echo "  cd .fpga-env"
-    echo ""
-    echo "📦 Instalar pacotes:"
-    echo "  pip install <package>"
-    echo ""
-    echo "🧪 Rodar simulação:"
-    echo "  make"
-    echo ""
-    echo "📊 Ver waveform:"
-    echo "  gtkwave dump.vcd"
-    echo ""
-    echo "🔧 Ferramentas:"
-    echo "  iverilog  - simulador Verilog"
-    echo "  verilator - simulador rápido"
-    echo "  ghdl      - simulador VHDL"
-    echo ""
-    echo "🧠 Conceito:"
-    echo "  - venv é local (por projeto)"
-    echo "  - Ative, mas NÃO entre na pasta"
-    echo ""
-    echo "📌 Dica:"
-    echo "  Quando aparecer no terminal (.fpga-env) o ambiente está ativo"
-    echo ""
-    echo "==============================================="
+  echo "================ FPGA ENV HELP ================"
+  echo ""
+  echo "📁 Projeto:"
+  echo "  cd ~/fpga-lab"
+  echo ""
+  echo "🐍 Ativar ambiente:"
+  echo "  source .fpga-env/bin/activate"
+  echo ""
+  echo "🚫 NÃO FAZER:"
+  echo "  cd .fpga-env"
+  echo ""
+  echo "📦 Instalar pacotes:"
+  echo "  pip install <package>"
+  echo ""
+  echo "🧪 Rodar simulação:"
+  echo "  make"
+  echo ""
+  echo "📊 Ver waveform:"
+  echo "  gtkwave dump.vcd"
+  echo ""
+  echo "🔧 Ferramentas:"
+  echo "  iverilog  - simulador Verilog"
+  echo "  verilator - simulador rápido"
+  echo "  ghdl      - simulador VHDL"
+  echo ""
+  echo "🧠 Conceito:"
+  echo "  - venv é local (por projeto)"
+  echo "  - Ative, mas NÃO entre na pasta"
+  echo ""
+  echo "📌 Dica:"
+  echo "  Quando aparecer no terminal (.fpga-env) o ambiente está ativo"
+  echo ""
+  echo "==============================================="
 }
-
-
-
-
-
-
-
 
 myhelp() {
   sep "🧰 Ajuda dos seus comandos pessoais"
@@ -329,6 +342,8 @@ myhelp() {
   echo "  doc              -> vai para ~/Documentos"
   echo "  dow              -> vai para ~/Downloads"
   echo "  proc             -> vai para /container/proc"
+  echo "  z <parte>        -> vai para diretórios visitados antes usando zoxide"
+  echo "  zz               -> volta para o diretório anterior com zoxide"
   echo "  l                -> eza -la"
   echo "  ll               -> eza -lah --group-directories-first"
   echo "  c                -> clear"
@@ -337,23 +352,36 @@ myhelp() {
   echo "  mc               -> carrega mc-wrapper.sh"
   echo
 
+  echo "BUSCA E INSPEÇÃO DE ARQUIVOS"
+  echo "  bat ARQUIVO      -> mostra arquivo com syntax highlight"
+  echo "  cat ARQUIVO      -> alias para bat/batcat, cat melhorado"
+  echo "  fd PADRAO [PATH] -> busca arquivos/diretórios, substituto moderno do find"
+  echo "  find ...         -> alias para fd/fdfind no uso interativo"
+  echo "  rg TEXTO [PATH]  -> busca texto dentro de arquivos, substituto moderno do grep"
+  echo "  grep ...         -> alias para rg no uso interativo"
+  echo "  extract ARQUIVO  -> extrai vários formatos automaticamente"
+  echo
+
+  echo "AMBIENTE POR PROJETO"
+  echo "  direnv allow     -> autoriza carregar variáveis do .envrc da pasta atual"
+  echo "  direnv reload    -> recarrega o .envrc"
+  echo "  direnv status    -> mostra status do direnv"
+  echo "  .envrc           -> arquivo por pasta para exportar PATH, PYTHONPATH, CUDA etc."
+  echo
+
   echo "DISCO E ESPAÇO"
-  echo "  df                          -> mostra discos internos e removíveis"
-  echo "  size                        -> mostra ajuda resumida do bloco de disco"
-  echo "  size dirs [PATH] [N]        -> top diretórios maiores"
+  echo "  df                              -> mostra discos internos e removíveis"
+  echo "  size                            -> mostra ajuda resumida do bloco de disco"
+  echo "  size dirs [PATH] [N]            -> top diretórios maiores"
   echo "  size archives [PATH] [SIZE] [N] -> arquivos compactados grandes"
-  echo "  bigdirs [PATH] [N]          -> backend do size dirs"
-  echo "  bigarchives [PATH] [SIZE] [N] -> backend do size archives"
+  echo "  bigdirs [PATH] [N]              -> backend do size dirs"
+  echo "  bigarchives [PATH] [SIZE] [N]   -> backend do size archives"
   echo
 
   echo "TRANSFERÊNCIA E ACESSO"
   echo "  ssh                         -> mostra dica de uso ou executa /usr/bin/ssh"
   echo "  scp                         -> mostra dica de uso ou executa /usr/bin/scp"
   echo "  rsync                       -> mostra dica de uso ou executa /usr/bin/rsync"
-  echo
-
-  echo "ARQUIVOS"
-  echo "  extract ARQUIVO             -> extrai vários formatos automaticamente"
   echo
 
   echo "REDE"
@@ -376,17 +404,19 @@ myhelp() {
   echo
 
   echo "INSPEÇÃO DO SEU AMBIENTE"
-  echo "  mycmds                      -> lista aliases e funções carregados"
+  echo "  mycmds                      -> lista aliases carregados"
   echo
 
   echo "DICAS"
   echo "  help                        -> mostra esta ajuda personalizada"
   echo "  help <builtin>              -> chama a ajuda original do bash"
+  echo "  command cat ARQUIVO         -> usa o cat original, sem alias"
+  echo "  /usr/bin/find ...           -> usa o find original"
+  echo "  /bin/grep ...               -> usa o grep original"
   echo "  size                        -> ajuda curta sobre comandos de disco"
   echo "  path                        -> ajuda curta sobre diagnóstico de PATH"
   echo
 }
-
 
 help() {
   if [ $# -eq 0 ]; then
@@ -396,11 +426,8 @@ help() {
   fi
 }
 
-
-
-
 nmaphelp() {
-    cat <<'EOF'
+  cat <<'EOF'
 nmapscan
   Escaneia uma rede usando sudo nmap -sn
 
@@ -446,15 +473,15 @@ Exemplos práticos:
 EOF
 }
 
-
 mycmds() {
   sep "Aliases"
-  alias | sort
+  alias | /usr/bin/sort
 }
 
-
-#essa função abre uma aplicação e fecha seu terminal. Ex.: no terminal digite "gui qgis" e o QGIS será aberto sem o terminal.
+# Essa função abre uma aplicação e fecha seu terminal.
+# Ex.: no terminal digite "gui qgis" e o QGIS será aberto sem o terminal.
 gui() {
-    setsid -f "$@" >/dev/null 2>&1 < /dev/null
-    exit
+  need_bin /usr/bin/setsid || return
+  /usr/bin/setsid -f "$@" >/dev/null 2>&1 < /dev/null
+  exit
 }
